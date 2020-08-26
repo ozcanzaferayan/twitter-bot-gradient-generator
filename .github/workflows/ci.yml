@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+  schedule:
+    # Execute CI at Turkey Timezone 08:00 (UTC + 3)
+    - cron: '0 5 * * *'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    name: Create linearGradient
+    if: "!contains(toJSON(github.event.commits.*.message), '[skip-ci]')"
+    steps:
+      - name: Dump GitHub context
+        env:
+          GITHUB_CONTEXT: ${{ toJson(github) }}
+        shell: bash
+        run: |
+          echo "Dumping github context"
+          echo "$GITHUB_CONTEXT"
+      - name: Install dependencies
+        if: "contains(github.event.head_commit.message, '--send-tweet') || contains(github.event_name, 'schedule')"
+        run: sudo apt-get install nkf
+      - uses: actions/checkout@v2
+      - id: log
+        run: |
+          echo "::set-output name=message::$(git log --no-merges -1 --oneline)"
+          echo "${{steps.log.outputs.message}}"
+      - name: Get if color selected
+        if: "contains(toJSON(github.event.commits.*.message), '-gradient')"
+        shell: bash
+        run: |
+          echo "Getting -gradient's second part from git msg"
+          secondPartByColumn=$(echo "${{steps.log.outputs.message}}" | awk -F "-gradient" '{print $2}' | sed 's/^[[:space:]]*//g')
+          echo "Extracting quoted string and removing quotes"
+          gradient="$(echo $secondPartByColumn | grep -o "'.*'" | sed "s/'//g")"
+          echo "Checking if gradient exists in array"
+          foundGradient=$(cat gradients.json | jq --arg gradient "$gradient" '.[] | select(.name | test($gradient;"i"))' | jq -r '.name')
+          echo "Setting gradient name as env variable"
+          echo "::set-env name=SELECTED_GRADIENT_NAME::$foundGradient"
+      - name: Create gradient
+        shell: bash
+        run: |
+          echo $SELECTED_GRADIENT_NAME
+          if [ -z "$SELECTED_GRADIENT_NAME" ]
+          then
+            randColorIndex=$(( RANDOM % 382 ))
+            selectedGradient=$(cat gradients.json |jq -r --arg randColorIndex "$randColorIndex" '.[$randColorIndex | tonumber]')
+          else
+            selectedGradient=$(cat gradients.json | jq --arg gradient "$SELECTED_GRADIENT_NAME" '.[] | select(.name==$gradient)')
+          fi
+          echo $selectedGradient
+          gradientColorName=$(echo $selectedGradient |jq -r '.name')
+          echo "::set-env name=GRADIENT::$gradientColorName"
+          gradientColors=$(echo $selectedGradient |jq -r '.colors | join(" ")')
+          array=($gradientColors)
+          len=${#array[@]}
+          gradientPercentage=$(( 100/($len-1)))
+          css="background: linear-gradient(-135deg, "
+          selectedColors=""
+          gradientColors=""
+          for i in "${!array[@]}"; do
+            selectedColors+="${array[$i]} "
+            css+="${array[$i]} $(($i * $gradientPercentage))%"
+            if [[ $i == 0 ]];
+            then
+              gradientColors+=" -size 1x1 xc:\"${array[$i]}\""
+              css+=", "
+            elif [[ $i == $(( $len - 1)) ]];
+            then
+              gradientColors+=" -size 1x100 gradient:\"${array[$i-1]}-${array[$i]}\" -size 1x1 xc:\"${array[$i]}\""
+            else
+              gradientColors+=" -size 1x100 gradient:\"${array[$i-1]}-${array[$i]}\""
+              css+=", "
+            fi
+          done
+          css+=");"
+          echo "$css"
+          echo "::set-env name=CSS::$css"
+          echo "Selected colors: $selectedColors"
+          urlEncodedColors=$(echo $selectedColors | sed "s/[[:space:]]/%20/g" | sed "s/#/%23/g")
+          echo "Success"
+          echo "::set-env name=URL_ENCODED_COLORS::$urlEncodedColors"
+          gradientColors="convert $gradientColors -append -scale 1280x720! -distort SRT 45 gradient.png"
+          echo $gradientColors
+          eval "$gradientColors"
+      - name: Add text
+        shell: bash
+        run: |
+          convert -background none -size 1280x760 -font AvantGarde-Demi -fill white -pointsize 90 -gravity Center caption:"$GRADIENT" text.png
+          composite -gravity center text.png gradient.png gradient.png
+          # convert gradient.png -gravity center -font AvantGarde-Demi -fill white -pointsize 90 -annotate +0+360 "$GRADIENT" gradient.png
+          # convert gradient.png -gravity east -font AvantGarde-Demi -fill "#00000011" -pointsize 5 -annotate +0+710 "Zafer AYAN" gradient.png
+      - name: Upload files
+        uses: actions/upload-artifact@v2
+        with:
+          name: gradients
+          path: gradient*.png
+      - name: Send tweet
+        if: "contains(github.event.head_commit.message, '--send-tweet') || contains(github.event_name, 'schedule')"
+        shell: bash
+        env:
+          MY_SCREEN_NAME: ${{ secrets.MY_SCREEN_NAME }}
+          MY_LANGUAGE: ${{ secrets.MY_LANGUAGE }}
+          TWITTER_ACCESS_TOKEN: ${{ secrets.TWITTER_ACCESS_TOKEN }}
+          TWITTER_ACCESS_TOKEN_SECRET: ${{ secrets.TWITTER_ACCESS_TOKEN_SECRET }}
+          TWITTER_API_KEY: ${{ secrets.TWITTER_API_KEY }}
+          TWITTER_API_SECRET_KEY: ${{ secrets.TWITTER_API_SECRET_KEY }}
+        run: |
+          chmod +x ./tweet.sh
+          media_id_string=$(./tweet.sh upload gradient.png | jq -r .media_id_string)
+          tweetText="$GRADIENT\n$CSS\n\nRelated designs for inspiration:\nhttps://www.designspiration.com/search/saves/?q=mobile%20design%20$URL_ENCODED_COLORS"
+          echo $tweetText
+          ./tweet.sh tw -m $media_id_string $tweetText
