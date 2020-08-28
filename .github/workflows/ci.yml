@@ -26,7 +26,7 @@ jobs:
         run: |
           echo "::set-output name=message::$(git log --no-merges -1 --oneline)"
           echo "${{steps.log.outputs.message}}"
-      - name: Get if color selected
+      - name: Get gradient color
         if: "contains(toJSON(github.event.commits.*.message), '-gradient')"
         shell: bash
         run: |
@@ -40,20 +40,10 @@ jobs:
           echo "::set-env name=SELECTED_GRADIENT_NAME::$foundGradient"
       - name: Create gradient
         shell: bash
-        run: |
-          chmod +x ./src/create.sh
-          ./src/create.sh
+        run: chmod +x ./src/createGradient.sh && ./src/createGradient.sh
       - name: Generate text color
         shell: bash
-        run: |
-          brightnessValue=$(convert gradient.png -colorspace Gray -format "%[fx:quantumrange*image.mean]" info:)
-          if [ $brightnessValue \> 50000 ];
-          then 
-            selectedTextColor="black"
-          else
-            selectedTextColor="white"
-          fi;
-          echo "::set-env name=SELECTED_TEXT_COLOR::$selectedTextColor"
+        run: chmod +x ./src/getTextColorBasedOnBrightness.sh && ./src/getTextColorBasedOnBrightness.sh
       - name: Add text
         shell: bash
         run: |
