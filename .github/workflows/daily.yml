@@ -1,31 +1,17 @@
 name: CI
 
 on:
-  push:
   schedule:
     # Execute CI at Turkey Timezone 08:00 (UTC + 3)
-    - cron: '0 5 * * *'
+    - cron: '*/5 * * * *'
 jobs:
   build:
     runs-on: ubuntu-latest
     name: Create linearGradient
-    if: "!contains(toJSON(github.event.commits.*.message), '[skip-ci]')"
     steps:
-      - name: Dump GitHub context
-        env:
-          GITHUB_CONTEXT: ${{ toJson(github) }}
-        shell: bash
-        run: |
-          echo "Dumping github context"
-          echo "$GITHUB_CONTEXT"
       - name: Install dependencies
-        if: "contains(github.event.head_commit.message, '--send-tweet') || contains(github.event_name, 'schedule')"
         run: sudo apt-get install nkf
       - uses: actions/checkout@v2
-      - id: log
-        run: |
-          echo "::set-output name=message::$(git log --no-merges -1 --oneline)"
-          echo "${{steps.log.outputs.message}}"
       - name: Get gradient color
         if: "contains(toJSON(github.event.commits.*.message), '-gradient')"
         shell: bash
@@ -57,7 +43,6 @@ jobs:
           name: gradients
           path: gradient*.png
       - name: Send tweet
-        if: "contains(github.event.head_commit.message, '--send-tweet') || contains(github.event_name, 'schedule')"
         shell: bash
         env:
           MY_SCREEN_NAME: ${{ secrets.MY_SCREEN_NAME }}
@@ -71,4 +56,4 @@ jobs:
           media_id_string=$(./tweet.sh upload gradient.png | jq -r .media_id_string)
           tweetText="$GRADIENT\n$CSS\n\nRelated designs for inspiration:\nhttps://www.designspiration.com/search/saves/?q=mobile%20design%20$URL_ENCODED_COLORS"
           echo $tweetText
-          ./tweet.sh tw -m $media_id_string $tweetText
+          #./tweet.sh tw -m $media_id_string $tweetText
