@@ -56,4 +56,4 @@ jobs:
           media_id_string=$(./tweet.sh upload gradient.png | jq -r .media_id_string)
           tweetText="$GRADIENT\n$CSS\n\nRelated designs for inspiration:\nhttps://www.designspiration.com/search/saves/?q=mobile%20design%20$URL_ENCODED_COLORS"
           echo $tweetText
-          #./tweet.sh tw -m $media_id_string $tweetText
+          ./tweet.sh tw -m $media_id_string $tweetText
